@@ -34,8 +34,8 @@ class MonitorService : Service() {
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         val density = resources.displayMetrics.density
         overlay = MonitorView(this)
-        params = WindowManager.LayoutParams((320*density).toInt(), (190*density).toInt(), WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.START; x = 10; y = (36*density).toInt() }
+        params = WindowManager.LayoutParams((210*density).toInt(), (52*density).toInt(), WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.START; x = getSharedPreferences("overlay", MODE_PRIVATE).getInt("x", 10); y = getSharedPreferences("overlay", MODE_PRIVATE).getInt("y", (36*density).toInt()) }
         wm?.addView(overlay, params)
         handler.post(update)
     }
@@ -43,8 +43,10 @@ class MonitorService : Service() {
     inner class MonitorView(context: Context): View(context) {
         private val paint = Paint(3)
         private val mem = getSystemService(ACTIVITY_SERVICE) as ActivityManager
-        private var compact = false
+        private var compact = true
         private var ramPercent = 0f
+        private val prefs = getSharedPreferences("overlay", MODE_PRIVATE)
+        private var showRam = prefs.getBoolean("show_ram", true)
         private var ramText = "—"
         private var batteryLevel = "—"
         private var batteryTemp = "—"
@@ -71,32 +73,46 @@ class MonitorService : Service() {
         }
         private var canvasRef: Canvas? = null
         override fun onDraw(canvas: Canvas) {
-            canvasRef = canvas
             val d = resources.displayMetrics.density
-            canvas.save(); canvas.scale(d,d)
-            paint.color = Color.argb(218, 9, 14, 22); canvas.drawRoundRect(0f,0f,320f,if(compact) 75f else 190f,12f,12f,paint)
-            val green = Color.rgb(96, 235, 111); val blue = Color.rgb(85, 200, 255); val yellow = Color.rgb(255, 197, 65)
-            label("FPS", 12f, 23f, 15f, green, true); label("N/A", 56f, 23f, 15f, Color.WHITE, true)
-            label("RAM", 140f, 23f, 14f, blue, true); label(ramText, 183f, 23f, 11f, Color.WHITE)
-            label("BAT", 12f, 50f, 14f, yellow, true); label(batteryLevel, 55f, 50f, 14f, Color.WHITE)
-            label("TEMP", 140f, 50f, 14f, yellow, true); label(batteryTemp, 190f, 50f, 14f, Color.WHITE)
+            canvas.save()
+            canvas.scale(d, d)
+            paint.style = Paint.Style.FILL
+            paint.color = Color.argb(205, 9, 14, 22)
+            val width = if (compact) 210f else 290f
+            val height = if (compact) 52f else 150f
+            canvas.drawRoundRect(0f, 0f, width, height, 12f, 12f, paint)
+            canvasRef = canvas
+            val green = Color.rgb(96, 235, 111)
+            val blue = Color.rgb(85, 200, 255)
+            val yellow = Color.rgb(255, 197, 65)
+            label("FPS", 10f, 19f, 13f, green, true)
+            label("N/A", 45f, 19f, 13f, Color.WHITE)
+            label("BAT", 112f, 19f, 12f, yellow, true)
+            label(batteryLevel, 146f, 19f, 12f, Color.WHITE)
+            label("RAM", 10f, 40f, 12f, blue, true)
+            label(ramText, 48f, 40f, 11f, Color.WHITE)
             if (!compact) {
-                label("CPU  N/A     GPU  N/A", 12f, 78f, 13f, blue)
-                label("RAM HISTORY", 12f, 104f, 12f, green, true)
-                paint.color = Color.DKGRAY; paint.strokeWidth = 1f
-                canvas.drawLine(12f, 156f, 305f, 156f, paint)
+                label("TEMP", 10f, 65f, 12f, yellow, true)
+                label(batteryTemp, 58f, 65f, 12f, Color.WHITE)
+                label("CPU / GPU: недоступно", 10f, 86f, 11f, blue)
+                label("FPS игры: требуется диагностика", 10f, 106f, 10f, Color.LTGRAY)
                 val values = history.toList()
                 if (values.size > 1) {
                     val path = Path()
                     values.forEachIndexed { i, v ->
-                        val x = 12f + i*293f/54f; val y = 153f - v*42f
-                        if(i==0) path.moveTo(x,y) else path.lineTo(x,y)
+                        val x = 10f + i * 270f / (values.size - 1)
+                        val y = 145f - v * 25f
+                        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
                     }
-                    paint.color = green; paint.strokeWidth = 1.8f; paint.style = Paint.Style.STROKE; canvas.drawPath(path,paint); paint.style = Paint.Style.FILL
+                    paint.color = green
+                    paint.strokeWidth = 1.5f
+                    paint.style = Paint.Style.STROKE
+                    canvas.drawPath(path, paint)
+                    paint.style = Paint.Style.FILL
                 }
-                label("FPS другого приложения недоступен", 12f, 177f, 10f, Color.LTGRAY)
             }
-            canvas.restore(); canvasRef = null
+            canvasRef = null
+            canvas.restore()
         }
         override fun onTouchEvent(event: MotionEvent): Boolean {
             val p = params ?: return false
@@ -104,7 +120,7 @@ class MonitorService : Service() {
                 MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; initialX = p.x; initialY = p.y; moved = false; return true }
                 MotionEvent.ACTION_MOVE -> { if (kotlin.math.abs(event.rawX-downX)+kotlin.math.abs(event.rawY-downY)>12) moved=true
                     if(moved) { p.x = initialX+(event.rawX-downX).toInt(); p.y = initialY+(event.rawY-downY).toInt(); wm?.updateViewLayout(this,p) }; return true }
-                MotionEvent.ACTION_UP -> { if(!moved) { compact = !compact; p.height = ((if(compact) 75 else 190)*resources.displayMetrics.density).toInt(); wm?.updateViewLayout(this,p); invalidate() }; return true }
+                MotionEvent.ACTION_UP -> { if (moved) getSharedPreferences("overlay", MODE_PRIVATE).edit().putInt("x", p.x).putInt("y", p.y).apply(); if(!moved) { compact = !compact; p.width = ((if(compact) 210 else 290)*resources.displayMetrics.density).toInt(); p.height = ((if(compact) 52 else 150)*resources.displayMetrics.density).toInt(); wm?.updateViewLayout(this,p); invalidate() }; return true }
             }
             return true
         }
