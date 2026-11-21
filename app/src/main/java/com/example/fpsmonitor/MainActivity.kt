@@ -1,6 +1,8 @@
 package com.example.fpsmonitor
 
 import android.Manifest
+import rikka.shizuku.Shizuku
+import android.content.pm.PackageManager
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
@@ -23,6 +25,31 @@ class MainActivity : Activity() {
         root.addView(text("FPS MONITOR", 29f, Color.rgb(90, 230, 130)).apply { typeface = Typeface.DEFAULT_BOLD })
         root.addView(text("Samsung S22 Ultra • Android 16\nБез root • плавающая панель поверх игр", 16f))
         root.addView(text("Реальные данные: RAM, заряд и температура батареи. FPS других приложений, GPU и температура CPU без специальных привилегий недоступны.", 14f, Color.LTGRAY))
+        val shizukuStatus = text("Shizuku: проверка подключения...", 14f, Color.rgb(90, 230, 130))
+        root.addView(shizukuStatus)
+        fun refreshShizuku() {
+            shizukuStatus.text = try {
+                when {
+                    !Shizuku.pingBinder() -> "Shizuku: сервис не запущен"
+                    Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED -> "Shizuku: доступ разрешён"
+                    else -> "Shizuku: требуется разрешение"
+                }
+            } catch (_: Exception) { "Shizuku: недоступен" }
+        }
+        val permissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+            if (requestCode == 202) runOnUiThread { refreshShizuku() }
+        }
+        Shizuku.addRequestPermissionResultListener(permissionListener)
+        refreshShizuku()
+        button("Подключить Shizuku") {
+            try {
+                if (!Shizuku.pingBinder()) {
+                    shizukuStatus.text = "Запусти Shizuku и вернись сюда"
+                } else if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                    Shizuku.requestPermission(202)
+                } else refreshShizuku()
+            } catch (_: Exception) { shizukuStatus.text = "Ошибка подключения Shizuku" }
+        }
         button("1. Разрешить отображение поверх окон") {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }
