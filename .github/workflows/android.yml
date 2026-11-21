@@ -1,5 +1,4 @@
 name: Build Android APK
-
 on:
   workflow_dispatch:
   push:
@@ -10,7 +9,6 @@ on:
       - 'gradle/**'
       - 'gradle.properties'
       - '.github/workflows/android.yml'
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,12 +20,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-      - uses: gradle/actions/setup-gradle@v4
-      - name: Check Android project
+      - name: Configure Android SDK
         run: |
-          test -f settings.gradle.kts || { echo "::error::Missing settings.gradle.kts. Upload extracted Android project files to repository root."; exit 1; }
-          test -f app/build.gradle.kts || { echo "::error::Missing app/build.gradle.kts."; exit 1; }
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
       - name: Upload APK
