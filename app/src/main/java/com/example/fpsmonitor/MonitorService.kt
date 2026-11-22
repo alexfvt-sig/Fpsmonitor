@@ -11,11 +11,21 @@ import java.util.Locale
 class MonitorService : Service() {
     companion object { const val START = "monitor.start"; const val STOP = "monitor.stop"; private const val CHANNEL = "monitor_status" }
     private val handler = Handler(Looper.getMainLooper())
+    private val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+    @Volatile private var fpsResult = FpsProbe.Result(null, "Диагностика не запущена")
+    private var lastProbeAt = 0L
     private var wm: WindowManager? = null
     private var overlay: MonitorView? = null
     private var params: WindowManager.LayoutParams? = null
     private val update = object : Runnable {
-        override fun run() { overlay?.refresh(); if (overlay != null) handler.postDelayed(this, 1000) }
+        override fun run() {
+            overlay?.refresh()
+            if (overlay != null && android.os.SystemClock.elapsedRealtime() - lastProbeAt >= 3000L) {
+                lastProbeAt = android.os.SystemClock.elapsedRealtime()
+                worker.execute { fpsResult = FpsProbe.measure() }
+            }
+            if (overlay != null) handler.postDelayed(this, 1000)
+        }
     }
     override fun onBind(intent: Intent?) = null
     override fun onCreate() {
@@ -39,7 +49,7 @@ class MonitorService : Service() {
         wm?.addView(overlay, params)
         handler.post(update)
     }
-    override fun onDestroy() { handler.removeCallbacks(update); overlay?.let { try { wm?.removeView(it) } catch (_: Exception) {} }; overlay = null; super.onDestroy() }
+    override fun onDestroy() { handler.removeCallbacks(update); overlay?.let { try { wm?.removeView(it) } catch (_: Exception) {} }; overlay = null; worker.shutdownNow(); super.onDestroy() }
     inner class MonitorView(context: Context): View(context) {
         private val paint = Paint(3)
         private val mem = getSystemService(ACTIVITY_SERVICE) as ActivityManager
@@ -86,7 +96,7 @@ class MonitorService : Service() {
             val blue = Color.rgb(85, 200, 255)
             val yellow = Color.rgb(255, 197, 65)
             label("FPS", 10f, 19f, 13f, green, true)
-            label("N/A", 45f, 19f, 13f, Color.WHITE)
+            label(fpsResult.fps?.toString() ?: "N/A", 45f, 19f, 13f, Color.WHITE)
             label("BAT", 112f, 19f, 12f, yellow, true)
             label(batteryLevel, 146f, 19f, 12f, Color.WHITE)
             label("RAM", 10f, 40f, 12f, blue, true)
@@ -95,7 +105,7 @@ class MonitorService : Service() {
                 label("TEMP", 10f, 65f, 12f, yellow, true)
                 label(batteryTemp, 58f, 65f, 12f, Color.WHITE)
                 label("CPU / GPU: недоступно", 10f, 86f, 11f, blue)
-                label("FPS игры: требуется диагностика", 10f, 106f, 10f, Color.LTGRAY)
+                label(fpsResult.status.take(42), 10f, 106f, 10f, Color.LTGRAY)
                 val values = history.toList()
                 if (values.size > 1) {
                     val path = Path()
