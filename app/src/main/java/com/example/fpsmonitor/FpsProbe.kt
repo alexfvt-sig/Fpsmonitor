@@ -38,6 +38,9 @@ object FpsProbe {
                     process.exitValue()
                 } catch (_: IllegalThreadStateException) {
                     null
+                } catch (_: IllegalStateException) {
+                    // Shizuku remote Process uses this for a still-running process.
+                    null
                 }
                 if (exitCode != null) break
                 Thread.sleep(50)
