@@ -2,7 +2,7 @@ package com.example.fpsmonitor
 
 import android.content.pm.PackageManager
 import rikka.shizuku.Shizuku
-import java.util.concurrent.TimeUnit
+import android.os.SystemClock
 
 /**
  * Best-effort SurfaceFlinger frame pacing diagnostics through Shizuku's shell identity.
@@ -29,12 +29,25 @@ object FpsProbe {
             }
             reader.isDaemon = true
             reader.start()
-            if (!process.waitFor(3, TimeUnit.SECONDS)) {
+            // Shizuku remote Process may not support timed waitFor reliably.
+            // Poll exitValue safely instead of assuming the process has exited.
+            val deadline = SystemClock.elapsedRealtime() + 3000L
+            var exitCode: Int? = null
+            while (SystemClock.elapsedRealtime() < deadline) {
+                exitCode = try {
+                    process.exitValue()
+                } catch (_: IllegalThreadStateException) {
+                    null
+                }
+                if (exitCode != null) break
+                Thread.sleep(50)
+            }
+            if (exitCode == null) {
                 process.destroy()
-                throw IllegalStateException("тайм-аут SurfaceFlinger")
+                throw IllegalStateException("Тайм-аут диагностики FPS")
             }
             reader.join(500)
-            if (process.exitValue() != 0) throw IllegalStateException("SurfaceFlinger отказал в доступе")
+            if (exitCode != 0) throw IllegalStateException("SurfaceFlinger отказал в доступе")
             output.toString()
         } finally { process.destroy() }
     }
