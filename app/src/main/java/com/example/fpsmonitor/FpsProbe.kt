@@ -14,7 +14,13 @@ object FpsProbe {
 
     private fun shell(vararg args: String): String {
         @Suppress("DEPRECATION")
-        val process = Shizuku.newProcess(arrayOf("sh", "-c", args.joinToString(" ")), null, null)
+        val method = Shizuku::class.java.getDeclaredMethod(
+            "newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java
+        )
+        method.isAccessible = true
+        val process = method.invoke(
+            null, arrayOf("sh", "-c", args.joinToString(" ")), null, null
+        ) as Process
         return try {
             val output = StringBuilder()
             val reader = Thread {
