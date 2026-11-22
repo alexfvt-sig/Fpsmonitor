@@ -2,7 +2,9 @@ package com.example.fpsmonitor
 
 import android.content.pm.PackageManager
 import rikka.shizuku.Shizuku
-import android.os.SystemClock
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Best-effort SurfaceFlinger frame pacing diagnostics through Shizuku's shell identity.
@@ -29,28 +31,23 @@ object FpsProbe {
             }
             reader.isDaemon = true
             reader.start()
-            // Shizuku remote Process may not support timed waitFor reliably.
-            // Poll exitValue safely instead of assuming the process has exited.
-            val deadline = SystemClock.elapsedRealtime() + 3000L
-            var exitCode: Int? = null
-            while (SystemClock.elapsedRealtime() < deadline) {
-                exitCode = try {
-                    process.exitValue()
-                } catch (_: IllegalThreadStateException) {
-                    null
-                } catch (_: IllegalStateException) {
-                    // Shizuku remote Process uses this for a still-running process.
-                    null
-                }
-                if (exitCode != null) break
-                Thread.sleep(50)
+            // Shizuku remote Process.exitValue() can throw "process hasn't exited".
+            // Wait for termination on a separate daemon thread with a deadline.
+            val done = CountDownLatch(1)
+            val exitCode = AtomicInteger(-1)
+            val waiter = Thread {
+                try { exitCode.set(process.waitFor()) }
+                catch (_: Exception) { exitCode.set(-1) }
+                finally { done.countDown() }
             }
-            if (exitCode == null) {
+            waiter.isDaemon = true
+            waiter.start()
+            if (!done.await(3, TimeUnit.SECONDS)) {
                 process.destroy()
                 throw IllegalStateException("Тайм-аут диагностики FPS")
             }
             reader.join(500)
-            if (exitCode != 0) throw IllegalStateException("SurfaceFlinger отказал в доступе")
+            if (exitCode.get() != 0) throw IllegalStateException("SurfaceFlinger отказал в доступе")
             output.toString()
         } finally { process.destroy() }
     }
